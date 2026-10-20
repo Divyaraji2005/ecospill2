@@ -1,0 +1,2165 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EcoSpill | AI Marine Oil Spill Detection & Sustainable Cleanup Decision Support</title>
+  
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Leaflet CSS & JS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            ocean: {
+              950: '#030b14',
+              900: '#071626',
+              850: '#0c223a',
+              800: '#112e4f',
+              700: '#1a4371',
+              600: '#265e9c',
+              500: '#357ebd',
+            },
+            teal: {
+              400: '#2dd4bf',
+              500: '#14b8a6',
+              600: '#0d9488',
+            },
+            coral: {
+              400: '#fb7185',
+              500: '#f43f5e',
+              600: '#e11d48',
+            },
+            amber: {
+              500: '#f59e0b',
+            }
+          },
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+            mono: ['JetBrains Mono', 'monospace'],
+          }
+        }
+      }
+    }
+  </script>
+
+  <style>
+    /* Custom scrollbars & smooth visuals */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #071626; }
+    ::-webkit-scrollbar-thumb { background: #1a4371; border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: #2dd4bf; }
+    
+    .glow-teal { box-shadow: 0 0 15px rgba(45, 212, 191, 0.25); }
+    .glow-coral { box-shadow: 0 0 15px rgba(244, 63, 94, 0.35); }
+    
+    .leaflet-container {
+      background-color: #0c223a !important;
+      font-family: inherit;
+    }
+    
+    /* Radar sweep animation */
+    @keyframes radar-sweep {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    .radar-beam {
+      animation: radar-sweep 4s linear infinite;
+    }
+
+    @media print {
+      body * { visibility: hidden; }
+      #printable-report, #printable-report * { visibility: visible; }
+      #printable-report { position: absolute; left: 0; top: 0; width: 100%; display: block !important; }
+    }
+  </style>
+</head>
+
+<body class="bg-ocean-950 text-slate-100 min-h-screen flex flex-col md:flex-row antialiased selection:bg-teal-500 selection:text-ocean-950">
+
+  <!-- Sidebar -->
+  <aside class="w-full md:w-64 bg-ocean-900 border-r border-ocean-800 flex flex-col shrink-0 z-30">
+    <!-- Brand Header -->
+    <div class="p-5 border-b border-ocean-800 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="w-10 h-10 rounded-xl bg-gradient-to-tr from-teal-500 to-ocean-600 flex items-center justify-center text-white shadow-lg shadow-teal-500/20">
+          <i data-lucide="waves" class="w-6 h-6"></i>
+        </div>
+        <div>
+          <h1 class="font-bold text-lg tracking-wider text-white flex items-center gap-1.5">
+            EcoSpill <span class="text-xs px-1.5 py-0.5 rounded bg-teal-500/20 text-teal-400 font-mono">AI 3.2</span>
+          </h1>
+          <p class="text-[11px] text-slate-400">Decision Support System</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Live System Telemetry / Status -->
+    <div class="px-5 py-3 bg-ocean-850/60 border-b border-ocean-800 flex items-center justify-between text-xs">
+      <div class="flex items-center gap-2">
+        <span class="relative flex h-2 w-2">
+          <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+          <span class="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
+        </span>
+        <span class="text-slate-300 font-medium">Model Pipeline:</span>
+      </div>
+      <span class="text-emerald-400 font-mono text-[11px] bg-emerald-950/50 px-2 py-0.5 rounded border border-emerald-800">ONLINE</span>
+    </div>
+
+    <!-- Navigation Links -->
+    <nav class="p-3 space-y-1.5 flex-1 overflow-y-auto">
+      <button onclick="switchTab('dashboard')" id="nav-dashboard" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition text-teal-400 bg-ocean-800/80 border border-teal-500/30">
+        <i data-lucide="layout-dashboard" class="w-4 h-4"></i> Dashboard Overview
+      </button>
+      <button onclick="switchTab('detection')" id="nav-detection" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition text-slate-300 hover:text-white hover:bg-ocean-800">
+        <i data-lucide="scan" class="w-4 h-4"></i> 1. AI Spill Detection
+      </button>
+      <button onclick="switchTab('prediction')" id="nav-prediction" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition text-slate-300 hover:text-white hover:bg-ocean-800">
+        <i data-lucide="compass" class="w-4 h-4"></i> 2. Ocean Drift Forecast
+      </button>
+      <button onclick="switchTab('risk')" id="nav-risk" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition text-slate-300 hover:text-white hover:bg-ocean-800">
+        <i data-lucide="shield-alert" class="w-4 h-4"></i> 3. Eco-Risk Assessment
+      </button>
+      <button onclick="switchTab('cleanup')" id="nav-cleanup" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition text-slate-300 hover:text-white hover:bg-ocean-800">
+        <i data-lucide="sprout" class="w-4 h-4"></i> 4. Bio-Cleanup Strategy
+      </button>
+      <button onclick="switchTab('resources')" id="nav-resources" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition text-slate-300 hover:text-white hover:bg-ocean-800">
+        <i data-lucide="boxes" class="w-4 h-4"></i> 5. Resource Optimizer
+      </button>
+      <button onclick="switchTab('incidents')" id="nav-incidents" class="w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition text-slate-300 hover:text-white hover:bg-ocean-800">
+        <i data-lucide="database" class="w-4 h-4"></i> Incident Records & DB
+      </button>
+    </nav>
+
+    <!-- Bottom Actions / Quick API Access -->
+    <div class="p-4 border-t border-ocean-800 space-y-2 bg-ocean-950/40">
+      <button onclick="openApiModal()" class="w-full text-xs font-mono py-2 px-3 rounded-lg bg-ocean-850 hover:bg-ocean-800 text-teal-300 border border-ocean-700 flex items-center justify-center gap-2 transition">
+        <i data-lucide="code-2" class="w-3.5 h-3.5"></i> FastAPI Endpoints
+      </button>
+      <div class="text-[10px] text-slate-400 text-center flex items-center justify-center gap-1">
+        <i data-lucide="info" class="w-3 h-3 text-slate-400"></i> Mode: <span id="backend-mode-tag" class="text-teal-400 font-mono">Edge In-Browser ML</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Work Area -->
+  <main class="flex-1 flex flex-col min-w-0 h-screen overflow-y-auto">
+    <!-- Top Action Bar -->
+    <header class="bg-ocean-900/80 backdrop-blur border-b border-ocean-800 px-6 py-3.5 flex flex-wrap items-center justify-between gap-4 sticky top-0 z-20">
+      <div class="flex items-center gap-3">
+        <h2 id="top-title" class="text-base font-semibold text-white tracking-wide">Command Center Overview</h2>
+        <span class="text-xs px-2.5 py-0.5 rounded-full font-mono bg-ocean-800 text-slate-300 border border-ocean-700" id="current-incident-tag">
+          Active: INC-2026-9042
+        </span>
+      </div>
+      
+      <div class="flex items-center gap-2.5">
+        <button onclick="triggerQuickWorkflow()" class="px-3 py-1.5 rounded-lg bg-teal-500 hover:bg-teal-400 text-ocean-950 font-semibold text-xs transition flex items-center gap-1.5 shadow-md shadow-teal-500/20">
+          <i data-lucide="play" class="w-3.5 h-3.5"></i> Run Full Automated Pipeline
+        </button>
+        <button onclick="exportReportPDF()" class="px-3 py-1.5 rounded-lg bg-ocean-800 hover:bg-ocean-700 text-slate-200 text-xs border border-ocean-700 transition flex items-center gap-1.5">
+          <i data-lucide="file-text" class="w-3.5 h-3.5"></i> Export Report
+        </button>
+        <button onclick="resetToSampleIncident()" title="Reset to Sample Spill" class="p-1.5 rounded-lg bg-ocean-800 hover:bg-ocean-700 text-slate-300 border border-ocean-700">
+          <i data-lucide="rotate-ccw" class="w-4 h-4"></i>
+        </button>
+      </div>
+    </header>
+
+    <!-- Notification Toast Container -->
+    <div id="toast-container" class="fixed top-16 right-6 z-50 space-y-2 pointer-events-none"></div>
+
+    <div class="p-6 space-y-6 flex-1 max-w-7xl mx-auto w-full">
+
+      <!-- ==============================================
+           TAB 0: DASHBOARD OVERVIEW
+      =============================================== -->
+      <section id="tab-dashboard" class="tab-panel space-y-6">
+        <!-- Metric Cards -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div class="bg-ocean-900 border border-ocean-800 rounded-xl p-4 relative overflow-hidden">
+            <div class="flex justify-between items-start">
+              <div>
+                <p class="text-xs font-medium text-slate-400">Total Monitored Area</p>
+                <h3 class="text-2xl font-bold text-white mt-1 font-mono" id="stat-slick-area">14.8 km²</h3>
+                <span class="text-[11px] text-coral-400 flex items-center gap-1 mt-1">
+                  <i data-lucide="trending-up" class="w-3 h-3"></i> +1.2 km²/6h drift
+                </span>
+              </div>
+              <div class="p-2.5 rounded-lg bg-ocean-800 text-teal-400">
+                <i data-lucide="map-pin" class="w-5 h-5"></i>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-ocean-900 border border-ocean-800 rounded-xl p-4 relative overflow-hidden">
+            <div class="flex justify-between items-start">
+              <div>
+                <p class="text-xs font-medium text-slate-400">AI Detection Confidence</p>
+                <h3 class="text-2xl font-bold text-teal-300 mt-1 font-mono" id="stat-confidence">94.6%</h3>
+                <span class="text-[11px] text-teal-400 flex items-center gap-1 mt-1">
+                  <i data-lucide="check-circle" class="w-3 h-3"></i> Synthetic Aperture Radar
+                </span>
+              </div>
+              <div class="p-2.5 rounded-lg bg-ocean-800 text-teal-400">
+                <i data-lucide="cpu" class="w-5 h-5"></i>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-ocean-900 border border-ocean-800 rounded-xl p-4 relative overflow-hidden">
+            <div class="flex justify-between items-start">
+              <div>
+                <p class="text-xs font-medium text-slate-400">Eco-Risk Index</p>
+                <h3 class="text-2xl font-bold text-coral-500 mt-1 font-mono" id="stat-risk-badge">CRITICAL (88/100)</h3>
+                <span class="text-[11px] text-amber-400 flex items-center gap-1 mt-1">
+                  <i data-lucide="alert-triangle" class="w-3 h-3"></i> 4.2 km to Coral Atoll
+                </span>
+              </div>
+              <div class="p-2.5 rounded-lg bg-coral-950/40 text-coral-400 border border-coral-800/30">
+                <i data-lucide="shield-alert" class="w-5 h-5"></i>
+              </div>
+            </div>
+          </div>
+
+          <div class="bg-ocean-900 border border-ocean-800 rounded-xl p-4 relative overflow-hidden">
+            <div class="flex justify-between items-start">
+              <div>
+                <p class="text-xs font-medium text-slate-400">Target Cleanup Tech</p>
+                <h3 class="text-xl font-bold text-emerald-400 mt-1">Cellulose Bio-Aerogel</h3>
+                <span class="text-[11px] text-slate-300 flex items-center gap-1 mt-1">
+                  <i data-lucide="leaf" class="w-3 h-3 text-emerald-400"></i> 100% Biodegradable
+                </span>
+              </div>
+              <div class="p-2.5 rounded-lg bg-emerald-950/40 text-emerald-400 border border-emerald-800/30">
+                <i data-lucide="sprout" class="w-5 h-5"></i>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Workflow Visual Banner -->
+        <div class="bg-gradient-to-r from-ocean-900 via-ocean-850 to-ocean-900 border border-ocean-800 rounded-xl p-5">
+          <p class="text-xs font-semibold text-teal-400 uppercase tracking-widest mb-3">EcoSpill Standard Operating Protocol (SOP)</p>
+          <div class="grid grid-cols-2 md:grid-cols-5 gap-3">
+            <div class="flex items-center gap-3 p-3 bg-ocean-950/50 rounded-lg border border-ocean-800">
+              <span class="w-7 h-7 rounded-full bg-teal-500/20 text-teal-400 flex items-center justify-center font-bold text-xs">1</span>
+              <div>
+                <p class="text-xs font-medium text-white">Detect</p>
+                <p class="text-[11px] text-slate-400">SAR & RGB Vision</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-3 p-3 bg-ocean-950/50 rounded-lg border border-ocean-800">
+              <span class="w-7 h-7 rounded-full bg-teal-500/20 text-teal-400 flex items-center justify-center font-bold text-xs">2</span>
+              <div>
+                <p class="text-xs font-medium text-white">Predict</p>
+                <p class="text-[11px] text-slate-400">Lagrangian Ocean Drift</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-3 p-3 bg-ocean-950/50 rounded-lg border border-ocean-800">
+              <span class="w-7 h-7 rounded-full bg-teal-500/20 text-teal-400 flex items-center justify-center font-bold text-xs">3</span>
+              <div>
+                <p class="text-xs font-medium text-white">Assess Risk</p>
+                <p class="text-[11px] text-slate-400">Bio-Hotspots & Flora</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-3 p-3 bg-ocean-950/50 rounded-lg border border-ocean-800">
+              <span class="w-7 h-7 rounded-full bg-teal-500/20 text-teal-400 flex items-center justify-center font-bold text-xs">4</span>
+              <div>
+                <p class="text-xs font-medium text-white">Recommend</p>
+                <p class="text-[11px] text-slate-400">Bio-Sorbents & Booms</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-3 p-3 bg-ocean-950/50 rounded-lg border border-ocean-800">
+              <span class="w-7 h-7 rounded-full bg-teal-500/20 text-teal-400 flex items-center justify-center font-bold text-xs">5</span>
+              <div>
+                <p class="text-xs font-medium text-white">Optimize</p>
+                <p class="text-[11px] text-slate-400">Supply & Crew Matrix</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dashboard Dual Map & Live Graph -->
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          <div class="lg:col-span-2 bg-ocean-900 border border-ocean-800 rounded-xl p-5 flex flex-col">
+            <div class="flex justify-between items-center mb-4">
+              <div>
+                <h3 class="text-sm font-semibold text-white">Spatial Situation Display</h3>
+                <p class="text-xs text-slate-400">Real-time maritime geospatial projection & sensitive MPA zones</p>
+              </div>
+              <button onclick="switchTab('prediction')" class="text-xs text-teal-400 hover:text-teal-300 flex items-center gap-1 font-medium">
+                Full Ocean Simulator <i data-lucide="arrow-right" class="w-3.5 h-3.5"></i>
+              </button>
+            </div>
+            <div id="dash-mini-map" class="h-72 w-full rounded-lg border border-ocean-800 overflow-hidden relative"></div>
+          </div>
+
+          <div class="bg-ocean-900 border border-ocean-800 rounded-xl p-5 flex flex-col justify-between">
+            <div>
+              <h3 class="text-sm font-semibold text-white mb-1">Risk Factors Deconstruction</h3>
+              <p class="text-xs text-slate-400 mb-4">Multi-attribute ecological vulnerability weighted distribution</p>
+              <div class="h-56 relative flex items-center justify-center">
+                <canvas id="riskRadarChart"></canvas>
+              </div>
+            </div>
+            <div class="mt-3 pt-3 border-t border-ocean-800 flex justify-between text-xs text-slate-400">
+              <span>Dominant threat:</span>
+              <span class="text-coral-400 font-medium">Shoreline & Mangrove Interception</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==============================================
+           TAB 1: AI SPILL DETECTION (Module 1)
+      =============================================== -->
+      <section id="tab-detection" class="tab-panel hidden space-y-6">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-ocean-900 border border-ocean-800 p-4 rounded-xl">
+          <div>
+            <h2 class="text-lg font-bold text-white flex items-center gap-2">
+              <i data-lucide="scan" class="w-5 h-5 text-teal-400"></i> Module 1: AI Imagery Analysis & Spectral Edge Segmentation
+            </h2>
+            <p class="text-xs text-slate-400">Deep residual convolution & spectral reflectance classification for marine surface hydrocarbons</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-slate-400">Presets:</span>
+            <button onclick="loadSamplePreset('sar')" class="px-2.5 py-1 text-xs rounded bg-ocean-800 hover:bg-ocean-700 text-teal-300 border border-ocean-700">SAR Satellite</button>
+            <button onclick="loadSamplePreset('drone')" class="px-2.5 py-1 text-xs rounded bg-ocean-800 hover:bg-ocean-700 text-teal-300 border border-ocean-700">Aerial Drone</button>
+            <button onclick="loadSamplePreset('clean')" class="px-2.5 py-1 text-xs rounded bg-ocean-800 hover:bg-ocean-700 text-slate-300 border border-ocean-700">Clean Ocean</button>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <!-- Left: Image Canvas & Upload Dropzone -->
+          <div class="lg:col-span-7 space-y-4">
+            <div class="bg-ocean-900 border border-ocean-800 rounded-xl p-5">
+              <div class="flex justify-between items-center mb-3">
+                <span class="text-xs font-semibold text-slate-300 uppercase tracking-wider">Imagery Visualizer & Neural Mask</span>
+                <div class="flex items-center gap-3">
+                  <label class="text-xs text-slate-400 flex items-center gap-1.5 cursor-pointer">
+                    <input type="checkbox" id="toggle-segmentation" checked onchange="redrawVisionCanvas()" class="accent-teal-500 rounded">
+                    Show Contour Mask
+                  </label>
+                  <label class="text-xs text-slate-400 flex items-center gap-1.5 cursor-pointer">
+                    <input type="checkbox" id="toggle-heatmap" onchange="redrawVisionCanvas()" class="accent-teal-500 rounded">
+                    Density Heatmap
+                  </label>
+                </div>
+              </div>
+
+              <!-- Main Canvas Area -->
+              <div class="relative w-full aspect-video bg-ocean-950 rounded-lg overflow-hidden border border-ocean-800 flex items-center justify-center group" id="drop-zone">
+                <canvas id="vision-canvas" class="max-w-full max-h-full object-contain cursor-crosshair"></canvas>
+                
+                <!-- Scanning animation overlay -->
+                <div id="scanner-overlay" class="absolute inset-0 pointer-events-none hidden">
+                  <div class="w-full h-1 bg-gradient-to-r from-transparent via-teal-400 to-transparent opacity-80 animate-pulse absolute top-1/2 -translate-y-1/2"></div>
+                  <div class="absolute inset-0 bg-teal-500/10"></div>
+                </div>
+
+                <div id="upload-placeholder" class="absolute inset-0 flex flex-col items-center justify-center p-6 text-center cursor-pointer pointer-events-none">
+                  <i data-lucide="upload-cloud" class="w-12 h-12 text-teal-400 mb-2 opacity-80"></i>
+                  <p class="text-sm font-medium text-white">Drag & drop marine surveillance imagery</p>
+                  <p class="text-xs text-slate-400 mt-1">Supports GeoTIFF, SAR RADARSAT-2, Sentinel-1, JPG, PNG (Max 25MB)</p>
+                </div>
+              </div>
+
+              <!-- File selector & trigger -->
+              <div class="mt-4 flex items-center gap-3">
+                <input type="file" id="file-input" accept="image/*" class="hidden" onchange="handleFileUpload(event)">
+                <button onclick="document.getElementById('file-input').click()" class="flex-1 py-2 px-4 rounded-lg bg-ocean-800 hover:bg-ocean-700 text-slate-200 text-xs font-medium border border-ocean-700 flex items-center justify-center gap-2">
+                  <i data-lucide="file-up" class="w-4 h-4 text-teal-400"></i> Browse Image File
+                </button>
+                <button onclick="runAiDetectionPipeline()" id="btn-run-ai" class="py-2 px-6 rounded-lg bg-teal-500 hover:bg-teal-400 text-ocean-950 text-xs font-bold transition flex items-center gap-2">
+                  <i data-lucide="sparkles" class="w-4 h-4"></i> Execute AI Inference
+                </button>
+              </div>
+            </div>
+
+            <!-- Transparency and Scientific Disclaimer Banner -->
+            <div class="bg-ocean-900/60 border border-ocean-800 rounded-lg p-3.5 text-xs text-slate-400 flex items-start gap-2.5">
+              <i data-lucide="info" class="w-4 h-4 text-amber-400 shrink-0 mt-0.5"></i>
+              <div>
+                <span class="text-amber-300 font-medium">Scientific Transparency Note:</span>
+                This inference runs an active computer-vision threshold & spatial clustering edge detection model in-browser, calibrated against satellite SAR backscatter decibel thresholds (&sigma;&deg; &lt; -24 dB). Always cross-reference with in-situ water sampling before maritime dispersion deployment.
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Telemetry & In-situ Sensor Inputs -->
+          <div class="lg:col-span-5 space-y-4">
+            <!-- Detection Verdict Card -->
+            <div class="bg-ocean-900 border border-ocean-800 rounded-xl p-5">
+              <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Model Classification Verdict</h3>
+              
+              <div class="flex items-center justify-between p-3.5 rounded-lg bg-ocean-950 border border-ocean-800 mb-3" id="detection-verdict-box">
+                <div class="flex items-center gap-3">
+                  <div class="w-8 h-8 rounded-full bg-coral-500/20 text-coral-400 flex items-center justify-center" id="verdict-icon">
+                    <i data-lucide="alert-octagon" class="w-5 h-5"></i>
+                  </div>
+                  <div>
+                    <h4 class="font-bold text-coral-400 text-sm" id="verdict-status">OIL SPILL DETECTED</h4>
+                    <p class="text-[11px] text-slate-400" id="verdict-type">Heavy Fuel Oil (HFO) / Bunker-C Profile</p>
+                  </div>
+                </div>
+                <div class="text-right">
+                  <span class="text-xl font-bold font-mono text-teal-300" id="verdict-confidence">94.6%</span>
+                  <p class="text-[10px] text-slate-400">Confidence</p>
+                </div>
+              </div>
+
+              <!-- Hydrocarbon Physical Metrics -->
+              <div class="grid grid-cols-2 gap-3 text-xs mb-4">
+                <div class="bg-ocean-850 p-2.5 rounded-lg border border-ocean-800">
+                  <span class="text-slate-400 block text-[11px]">Estimated Slick Area</span>
+                  <span class="text-base font-semibold text-white font-mono" id="metric-slick-area">14.8 km²</span>
+                </div>
+                <div class="bg-ocean-850 p-2.5 rounded-lg border border-ocean-800">
+                  <span class="text-slate-400 block text-[11px]">Mean Film Thickness</span>
+                  <span class="text-base font-semibold text-teal-300 font-mono" id="metric-slick-thickness">0.08 mm (Medium)</span>
+                </div>
+                <div class="bg-ocean-850 p-2.5 rounded-lg border border-ocean-800">
+                  <span class="text-slate-400 block text-[11px]">Estimated Release Mass</span>
+                  <span class="text-base font-semibold text-coral-400 font-mono" id="metric-slick-volume">~1,180 m³</span>
+                </div>
+                <div class="bg-ocean-850 p-2.5 rounded-lg border border-ocean-800">
+                  <span class="text-slate-400 block text-[11px]">Sensor Hydrocarbon ppm</span>
+                  <span class="text-base font-semibold text-amber-400 font-mono" id="metric-slick-ppm">482 ppm (High)</span>
+                </div>
+              </div>
+
+              <!-- In-Situ Sensor Form Controls -->
+              <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2 pt-2 border-t border-ocean-800">In-situ Oceanic & Weather Telemetry</h3>
+              <div class="space-y-3 text-xs">
+                <div>
+                  <div class="flex justify-between text-slate-300 mb-1">
+                    <span>Wind Velocity (Knots):</span>
+                    <span class="font-mono text-teal-300" id="val-wind-speed">16.5 kts</span>
+                  </div>
+                  <input type="range" id="input-wind-speed" min="2" max="45" step="0.5" value="16.5" class="w-full accent-teal-500" oninput="updateSensorValues()">
+                </div>
+
+                <div>
+                  <div class="flex justify-between text-slate-300 mb-1">
+                    <span>Wind Direction (&deg; Bearing):</span>
+                    <span class="font-mono text-teal-300" id="val-wind-dir">135° (SE)</span>
+                  </div>
+                  <input type="range" id="input-wind-dir" min="0" max="359" step="5" value="135" class="w-full accent-teal-500" oninput="updateSensorValues()">
+                </div>
+
+                <div class="grid grid-cols-2 gap-3">
+                  <div>
+                    <label class="block text-slate-400 mb-1">Sea Current (m/s):</label>
+                    <input type="number" id="input-current-speed" value="0.75" step="0.05" class="w-full bg-ocean-950 border border-ocean-800 rounded px-2.5 py-1.5 text-slate-200 font-mono" onchange="updateSensorValues()">
+                  </div>
+                  <div>
+                    <label class="block text-slate-400 mb-1">Water Temp (&deg;C):</label>
+                    <input type="number" id="input-water-temp" value="23.4" step="0.5" class="w-full bg-ocean-950 border border-ocean-800 rounded px-2.5 py-1.5 text-slate-200 font-mono" onchange="updateSensorValues()">
+                  </div>
+                </div>
+
+                <div class="pt-2">
+                  <button onclick="syncSensorToSimulator()" class="w-full py-2 bg-ocean-800 hover:bg-ocean-700 text-teal-300 border border-teal-500/30 rounded-lg font-medium transition flex items-center justify-center gap-1.5">
+                    <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i> Push Sensor Data to Drift Simulator
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==============================================
+           TAB 2: SPILL SPREAD PREDICTION (Module 2)
+      =============================================== -->
+      <section id="tab-prediction" class="tab-panel hidden space-y-6">
+        <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 bg-ocean-900 border border-ocean-800 p-4 rounded-xl">
+          <div>
+            <h2 class="text-lg font-bold text-white flex items-center gap-2">
+              <i data-lucide="compass" class="w-5 h-5 text-teal-400"></i> Module 2: Ocean Drift Advection-Diffusion Simulator
+            </h2>
+            <p class="text-xs text-slate-400">Physics model: Fay's gravity-viscous spreading + 3.5% wind drift coefficient + Coriolis deflection</p>
+          </div>
+          <div class="flex items-center gap-2 bg-ocean-950 px-3 py-1.5 rounded-lg border border-ocean-800">
+            <span class="text-xs text-slate-400">Advection Vector:</span>
+            <span class="text-xs font-mono text-teal-400" id="drift-vector-badge">2.14 knots @ 318° NW</span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <!-- Interactive Map Container -->
+          <div class="lg:col-span-8 bg-ocean-900 border border-ocean-800 rounded-xl p-4 flex flex-col">
+            <div class="flex justify-between items-center mb-3 text-xs">
+              <div class="flex items-center gap-3">
+                <span class="font-semibold text-slate-200">Interactive Hydrodynamic Trajectory</span>
+                <span class="px-2 py-0.5 rounded bg-ocean-800 text-slate-300 font-mono">Biscayne Bay / Florida Straits</span>
+              </div>
+              <div class="flex items-center gap-3">
+                <span class="flex items-center gap-1 text-teal-400"><span class="w-2.5 h-2.5 rounded-full bg-teal-400 inline-block"></span> Oil Cone</span>
+                <span class="flex items-center gap-1 text-coral-400"><span class="w-2.5 h-2.5 rounded-full bg-coral-400 inline-block"></span> Coral Reefs</span>
+                <span class="flex items-center gap-1 text-emerald-400"><span class="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block"></span> Mangrove Shore</span>
+              </div>
+            </div>
+
+            <!-- Leaflet Map Container -->
+            <div id="spread-map" class="h-[460px] w-full rounded-lg border border-ocean-800 relative z-10"></div>
+
+            <!-- Forecast Slider Controls -->
+            <div class="mt-4 p-3 bg-ocean-950 rounded-lg border border-ocean-800">
+              <div class="flex justify-between items-center text-xs mb-2">
+                <span class="text-slate-300 font-semibold flex items-center gap-1.5">
+                  <i data-lucide="clock" class="w-4 h-4 text-teal-400"></i> Forecast Interval: <span id="label-forecast-hour" class="text-teal-400 font-mono text-sm ml-1">+24 Hours</span>
+                </span>
+                <div class="flex gap-1.5">
+                  <button onclick="setForecastHour(0)" class="px-2 py-0.5 text-xs bg-ocean-850 hover:bg-ocean-800 text-slate-300 rounded">0h</button>
+                  <button onclick="setForecastHour(6)" class="px-2 py-0.5 text-xs bg-ocean-850 hover:bg-ocean-800 text-slate-300 rounded">6h</button>
+                  <button onclick="setForecastHour(12)" class="px-2 py-0.5 text-xs bg-ocean-850 hover:bg-ocean-800 text-slate-300 rounded">12h</button>
+                  <button onclick="setForecastHour(24)" class="px-2 py-0.5 text-xs bg-teal-500/20 text-teal-300 rounded border border-teal-500/40">24h</button>
+                  <button onclick="setForecastHour(48)" class="px-2 py-0.5 text-xs bg-ocean-850 hover:bg-ocean-800 text-slate-300 rounded">48h</button>
+                </div>
+              </div>
+              <input type="range" id="slider-forecast" min="0" max="48" step="1" value="24" class="w-full accent-teal-500" oninput="onForecastSliderChange(this.value)">
+              <div class="flex justify-between text-[10px] text-slate-400 mt-1 font-mono">
+                <span>T+0h (Detection Origin)</span>
+                <span>T+12h (Mid-Channel)</span>
+                <span>T+24h (Reef Proximity)</span>
+                <span>T+48h (Shoreline Impact)</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Drift Parameters & Physics Details -->
+          <div class="lg:col-span-4 space-y-4">
+            <div class="bg-ocean-900 border border-ocean-800 rounded-xl p-5">
+              <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Hydrodynamic Drift Equations</h3>
+              
+              <div class="space-y-3 text-xs">
+                <div class="p-3 bg-ocean-950 rounded-lg border border-ocean-800 font-mono text-slate-300">
+                  <p class="text-[11px] text-teal-400">Total Velocity Vector (V_total):</p>
+                  <p class="text-xs mt-1">V_spill = V_current + 0.035 * V_wind &times; R(&theta;_coriolis)</p>
+                </div>
+
+                <div class="space-y-2">
+                  <div class="flex justify-between py-1.5 border-b border-ocean-800">
+                    <span class="text-slate-400">Windage Factor:</span>
+                    <span class="font-mono text-teal-300">3.5% (Sea-surface slip)</span>
+                  </div>
+                  <div class="flex justify-between py-1.5 border-b border-ocean-800">
+                    <span class="text-slate-400">Coriolis Deflection:</span>
+                    <span class="font-mono text-slate-300">+12.4° Right (25°N Lat)</span>
+                  </div>
+                  <div class="flex justify-between py-1.5 border-b border-ocean-800">
+                    <span class="text-slate-400">Spill Origin Lat/Lon:</span>
+                    <span class="font-mono text-slate-300">25.320° N, -80.080° W</span>
+                  </div>
+                  <div class="flex justify-between py-1.5 border-b border-ocean-800">
+                    <span class="text-slate-400">Estimated Projected Area:</span>
+                    <span class="font-mono text-coral-400 font-semibold" id="pred-area-val">34.6 km² (+24h)</span>
+                  </div>
+                  <div class="flex justify-between py-1.5">
+                    <span class="text-slate-400">Shoreline Impact ETA:</span>
+                    <span class="font-mono text-amber-400 font-semibold" id="pred-eta-val">31 Hours (Key Biscayne)</span>
+                  </div>
+                </div>
+
+                <div class="pt-2">
+                  <button onclick="recalculateDriftSim()" class="w-full py-2 bg-teal-500 hover:bg-teal-400 text-ocean-950 font-bold rounded-lg transition text-xs flex items-center justify-center gap-1.5">
+                    <i data-lucide="play" class="w-3.5 h-3.5"></i> Recalculate Simulation Mesh
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Simulation Limitations Box -->
+            <div class="bg-ocean-900 border border-ocean-800 rounded-xl p-4 text-xs">
+              <h4 class="font-semibold text-slate-200 mb-1 flex items-center gap-1.5">
+                <i data-lucide="shield-check" class="w-4 h-4 text-teal-400"></i> Model Scientific Bounds
+              </h4>
+              <p class="text-slate-400 leading-relaxed text-[11px]">
+                Predictions assume constant current bathymetry. Wave orbital velocities and Langmuir circulation cells are approximated via standard empirical turbulence coefficients (D_h = 10 m²/s).
+              </p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==============================================
+           TAB 3: ENVIRONMENTAL RISK ASSESSMENT (Module 3)
+      =============================================== -->
+      <section id="tab-risk" class="tab-panel hidden space-y-6">
+        <div class="bg-ocean-900 border border-ocean-800 p-4 rounded-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+          <div>
+            <h2 class="text-lg font-bold text-white flex items-center gap-2">
+              <i data-lucide="shield-alert" class="w-5 h-5 text-coral-400"></i> Module 3: Marine Vulnerability & Environmental Risk Index
+            </h2>
+            <p class="text-xs text-slate-400">NOAA ESI (Environmental Sensitivity Index) multi-criteria weighted scoring</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <span class="text-xs text-slate-400">Overall Severity:</span>
+            <span class="px-3 py-1 rounded bg-coral-500/20 text-coral-400 font-bold border border-coral-500/30 text-sm">CRITICAL (88/100)</span>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <!-- Left: Gauge & Criteria Breakdown -->
+          <div class="lg:col-span-7 space-y-4">
+            <div class="bg-ocean-900 border border-ocean-800 rounded-xl p-5">
+              <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Risk Criteria Weights & Dynamic Scores</h3>
+              
+              <div class="space-y-4">
+                <!-- Proximity to Shoreline -->
+                <div>
+                  <div class="flex justify-between text-xs mb-1">
+                    <span class="text-slate-300 font-medium">1. Coastline Proximity (&lt; 8 km critical)</span>
+                    <span class="text-coral-400 font-mono font-bold">92 / 100 (Weight: 25%)</span>
+                  </div>
+                  <div class="w-full bg-ocean-950 rounded-full h-2">
+                    <div class="bg-coral-500 h-2 rounded-full" style="width: 92%"></div>
+                  </div>
+                  <p class="text-[11px] text-slate-400 mt-1">Current distance: 4.8 km to shoreline. Rapid stranding vulnerability.</p>
+                </div>
+
+                <!-- Coral Reef Habitat -->
+                <div>
+                  <div class="flex justify-between text-xs mb-1">
+                    <span class="text-slate-300 font-medium">2. Coral Reef & Seagrass Sanctuary (MPA)</span>
+                    <span class="text-coral-400 font-mono font-bold">95 / 100 (Weight: 30%)</span>
+                  </div>
+                  <div class="w-full bg-ocean-950 rounded-full h-2">
+                    <div class="bg-coral-500 h-2 rounded-full" style="width: 95%"></div>
+                  </div>
+                  <p class="text-[11px] text-slate-400 mt-1">Acropora palmata elkhorn corals 4.2 km down-drift. Toxic water-soluble fractions risk.</p>
+                </div>
+
+                <!-- Wildlife Corridors -->
+                <div>
+                  <div class="flex justify-between text-xs mb-1">
+                    <span class="text-slate-300 font-medium">3. Marine Wildlife & Sea Turtle Nesting</span>
+                    <span class="text-amber-400 font-mono font-bold">78 / 100 (Weight: 20%)</span>
+                  </div>
+                  <div class="w-full bg-ocean-950 rounded-full h-2">
+                    <div class="bg-amber-500 h-2 rounded-full" style="width: 78%"></div>
+                  </div>
+                  <p class="text-[11px] text-slate-400 mt-1">Loggerhead turtle migratory path overlap. High inhalation & plumage ingestion hazard.</p>
+                </div>
+
+                <!-- Oil Concentration & Chemical Toxicity -->
+                <div>
+                  <div class="flex justify-between text-xs mb-1">
+                    <span class="text-slate-300 font-medium">4. Slick Volume & Chemical Persistence</span>
+                    <span class="text-coral-400 font-mono font-bold">85 / 100 (Weight: 25%)</span>
+                  </div>
+                  <div class="w-full bg-ocean-950 rounded-full h-2">
+                    <div class="bg-coral-500 h-2 rounded-full" style="width: 85%"></div>
+                  </div>
+                  <p class="text-[11px] text-slate-400 mt-1">Heavy aromatic hydrocarbon profile. Low natural evaporation rate (only 12% in 24h).</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Priority Protection Table -->
+            <div class="bg-ocean-900 border border-ocean-800 rounded-xl p-5">
+              <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Priority Protection Zones (Ranked by Vulnerability)</h3>
+              <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                  <thead class="text-slate-400 border-b border-ocean-800">
+                    <tr>
+                      <th class="pb-2">Priority</th>
+                      <th class="pb-2">Zone Name</th>
+                      <th class="pb-2">Habitat Type</th>
+                      <th class="pb-2">ESI Rank</th>
+                      <th class="pb-2">Action Required</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-ocean-850 text-slate-300">
+                    <tr>
+                      <td class="py-2.5 text-coral-400 font-bold">#1 P-1</td>
+                      <td class="font-medium text-white">Biscayne Coral Ridge</td>
+                      <td>Barrier Coral Reef</td>
+                      <td><span class="px-1.5 py-0.5 rounded bg-coral-500/20 text-coral-400 font-mono">ESI-10B</span></td>
+                      <td class="text-teal-300">Deploy Deflection Booms Immediately</td>
+                    </tr>
+                    <tr>
+                      <td class="py-2.5 text-coral-400 font-bold">#2 P-2</td>
+                      <td class="font-medium text-white">Oleta Mangrove Estuary</td>
+                      <td>Red Mangrove Swamps</td>
+                      <td><span class="px-1.5 py-0.5 rounded bg-coral-500/20 text-coral-400 font-mono">ESI-10D</span></td>
+                      <td class="text-teal-300">Bio-sorbent Shoreline Barriers</td>
+                    </tr>
+                    <tr>
+                      <td class="py-2.5 text-amber-400 font-bold">#3 P-3</td>
+                      <td class="font-medium text-white">Virginia Key Hatchery</td>
+                      <td>Seagrass & Nursery</td>
+                      <td><span class="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 font-mono">ESI-9A</span></td>
+                      <td class="text-teal-300">Skimmer Vessel Staging</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+
+          <!-- Right: Visual Risk Gauge & Sensitivity Guidelines -->
+          <div class="lg:col-span-5 space-y-4">
+            <div class="bg-ocean-900 border border-ocean-800 rounded-xl p-5 text-center flex flex-col items-center justify-center">
+              <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-2">Composite Hazard Gauge</h3>
+              
+              <!-- Circular Progress Gauge -->
+              <div class="relative w-44 h-44 flex items-center justify-center my-2">
+                <svg class="w-full h-full transform -rotate-90" viewBox="0 0 100 100">
+                  <circle cx="50" cy="50" r="40" stroke="#0c223a" stroke-width="10" fill="transparent" />
+                  <circle id="risk-gauge-circle" cx="50" cy="50" r="40" stroke="#f43f5e" stroke-width="10" stroke-dasharray="251.2" stroke-dashoffset="30" stroke-linecap="round" fill="transparent" class="transition-all duration-1000" />
+                </svg>
+                <div class="absolute flex flex-col items-center">
+                  <span class="text-3xl font-extrabold text-coral-500 font-mono" id="risk-gauge-number">88</span>
+                  <span class="text-[10px] text-slate-400 font-mono">/ 100 RISK INDEX</span>
+                </div>
+              </div>
+
+              <div class="inline-block px-3 py-1 rounded-full bg-coral-500/20 text-coral-400 text-xs font-bold border border-coral-500/30">
+                CRITICAL THREAT LEVEL
+              </div>
+              <p class="text-xs text-slate-400 mt-3 max-w-xs leading-relaxed">
+                Automated threshold breach: Slick trajectory vector intersects with sensitive marine sanctuary within 18 hours. Immediate multi-agency activation mandated.
+              </p>
+            </div>
+
+            <div class="bg-ocean-900 border border-ocean-800 rounded-xl p-5">
+              <h4 class="text-xs font-semibold text-teal-400 uppercase tracking-wider mb-2">Ecological Protection Directive</h4>
+              <ul class="text-xs text-slate-300 space-y-2">
+                <li class="flex items-start gap-2">
+                  <i data-lucide="check" class="w-4 h-4 text-emerald-400 shrink-0"></i>
+                  <span><strong>Zero Dispersant Zone:</strong> Prohibit chemical Corexit dispersants within 5 NM of shallow coral reefs.</span>
+                </li>
+                <li class="flex items-start gap-2">
+                  <i data-lucide="check" class="w-4 h-4 text-emerald-400 shrink-0"></i>
+                  <span><strong>Deflection Strategy:</strong> Angle containment booms at 30° to divert surface oil into deep open channel for skimming.</span>
+                </li>
+                <li class="flex items-start gap-2">
+                  <i data-lucide="check" class="w-4 h-4 text-emerald-400 shrink-0"></i>
+                  <span><strong>Wildlife Deterrence:</strong> Deploy acoustic hazing buoys at Virginia Key to prevent dolphin and sea turtle surfacing.</span>
+                </li>
+              </ul>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==============================================
+           TAB 4: SUSTAINABLE CLEANUP STRATEGY (Module 4)
+      =============================================== -->
+      <section id="tab-cleanup" class="tab-panel hidden space-y-6">
+        <div class="bg-ocean-900 border border-ocean-800 p-4 rounded-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+          <div>
+            <h2 class="text-lg font-bold text-white flex items-center gap-2">
+              <i data-lucide="sprout" class="w-5 h-5 text-emerald-400"></i> Module 4: Sustainable & Biodegradable Cleanup Decision Engine
+            </h2>
+            <p class="text-xs text-slate-400">Scientifically evaluated low-toxicity bio-sorbents, mechanical skimming, and microbial remediation</p>
+          </div>
+          <span class="text-xs font-mono bg-emerald-950/60 text-emerald-400 px-3 py-1 rounded border border-emerald-800">
+            Peer-Reviewed Adsorption Metrics
+          </span>
+        </div>
+
+        <!-- Recommendation Matrix Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+          
+          <!-- Card 1: Cellulose Bio-Aerogel -->
+          <div class="bg-ocean-900 border border-teal-500/40 rounded-xl p-5 flex flex-col justify-between relative glow-teal">
+            <div class="absolute -top-2.5 right-4 bg-teal-500 text-ocean-950 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+              Top Sustainable Pick
+            </div>
+            <div>
+              <div class="flex items-center gap-2.5 mb-2">
+                <div class="p-2 bg-emerald-500/20 text-emerald-400 rounded-lg">
+                  <i data-lucide="leaf" class="w-5 h-5"></i>
+                </div>
+                <div>
+                  <h3 class="text-base font-bold text-white">Nanocellulose Bio-Aerogel</h3>
+                  <p class="text-[11px] text-teal-400">Modified Agricultural Waste Fiber</p>
+                </div>
+              </div>
+              <p class="text-xs text-slate-300 mt-2 leading-relaxed">
+                Ultra-lightweight superhydrophobic bio-aerogel. Selectively absorbs hydrocarbons while repelling seawater with minimal secondary waste.
+              </p>
+
+              <div class="mt-4 space-y-1.5 text-xs bg-ocean-950 p-3 rounded-lg border border-ocean-800">
+                <div class="flex justify-between">
+                  <span class="text-slate-400">Oil Absorption Capacity:</span>
+                  <span class="font-mono text-emerald-400 font-bold">45 - 65 g/g</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-400">Biodegradability:</span>
+                  <span class="font-mono text-teal-300">100% (60 days in marine)</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-400">Toxicity to Coral:</span>
+                  <span class="font-mono text-emerald-400 font-bold">Non-toxic (LC50 &gt; 1000mg/L)</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-400">Estimated Cost:</span>
+                  <span class="font-mono text-slate-200">~$3.20 / kg</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-4 pt-3 border-t border-ocean-800 flex justify-between items-center text-xs">
+              <span class="text-teal-400 flex items-center gap-1"><i data-lucide="check" class="w-3.5 h-3.5"></i> Optimal for Reef Fringe</span>
+              <button onclick="selectCleanupMaterial('cellulose')" class="px-3 py-1 bg-teal-500 text-ocean-950 font-bold rounded hover:bg-teal-400 transition">
+                Select
+              </button>
+            </div>
+          </div>
+
+          <!-- Card 2: Bagasse & Rice Husk Sorbent -->
+          <div class="bg-ocean-900 border border-ocean-800 rounded-xl p-5 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center gap-2.5 mb-2">
+                <div class="p-2 bg-amber-500/20 text-amber-400 rounded-lg">
+                  <i data-lucide="wheat" class="w-5 h-5"></i>
+                </div>
+                <div>
+                  <h3 class="text-base font-bold text-white">Carbonized Rice Husk & Bagasse</h3>
+                  <p class="text-[11px] text-amber-400">Upcycled Crop Residue</p>
+                </div>
+              </div>
+              <p class="text-xs text-slate-300 mt-2 leading-relaxed">
+                Pyrolyzed agricultural biomass with high porous surface area. Fast adsorption kinetics suitable for containment boom fill in coastal zones.
+              </p>
+
+              <div class="mt-4 space-y-1.5 text-xs bg-ocean-950 p-3 rounded-lg border border-ocean-800">
+                <div class="flex justify-between">
+                  <span class="text-slate-400">Oil Absorption Capacity:</span>
+                  <span class="font-mono text-amber-400 font-bold">18 - 28 g/g</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-400">Biodegradability:</span>
+                  <span class="font-mono text-teal-300">Natural Degradation (90d)</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-400">Toxicity to Coral:</span>
+                  <span class="font-mono text-emerald-400">Negligible</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-400">Estimated Cost:</span>
+                  <span class="font-mono text-slate-200">~$0.85 / kg (Low Cost)</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-4 pt-3 border-t border-ocean-800 flex justify-between items-center text-xs">
+              <span class="text-amber-400 flex items-center gap-1"><i data-lucide="check" class="w-3.5 h-3.5"></i> High Abundance</span>
+              <button onclick="selectCleanupMaterial('rice_husk')" class="px-3 py-1 bg-ocean-800 hover:bg-ocean-700 text-slate-200 rounded transition border border-ocean-700">
+                Select
+              </button>
+            </div>
+          </div>
+
+          <!-- Card 3: Mechanical Booms & Skimmers -->
+          <div class="bg-ocean-900 border border-ocean-800 rounded-xl p-5 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center gap-2.5 mb-2">
+                <div class="p-2 bg-ocean-800 text-teal-300 rounded-lg">
+                  <i data-lucide="anchor" class="w-5 h-5"></i>
+                </div>
+                <div>
+                  <h3 class="text-base font-bold text-white">Weir Skimmers & Curtain Booms</h3>
+                  <p class="text-[11px] text-slate-400">Primary Mechanical Recovery</p>
+                </div>
+              </div>
+              <p class="text-xs text-slate-300 mt-2 leading-relaxed">
+                Hydrodynamic containment curtain booms paired with high-volume drum/brush skimmers. Non-chemical physical extraction without water column toxins.
+              </p>
+
+              <div class="mt-4 space-y-1.5 text-xs bg-ocean-950 p-3 rounded-lg border border-ocean-800">
+                <div class="flex justify-between">
+                  <span class="text-slate-400">Recovery Rate:</span>
+                  <span class="font-mono text-teal-300 font-bold">120 m³/hr per unit</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-400">Efficiency in Choppy Seas:</span>
+                  <span class="font-mono text-amber-400">Limited if wave &gt; 1.5m</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-400">Environmental Toxicity:</span>
+                  <span class="font-mono text-emerald-400 font-bold">Zero Chemical Footprint</span>
+                </div>
+                <div class="flex justify-between">
+                  <span class="text-slate-400">Operational Cost:</span>
+                  <span class="font-mono text-slate-200">~$4,500 / day / vessel</span>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-4 pt-3 border-t border-ocean-800 flex justify-between items-center text-xs">
+              <span class="text-slate-300 flex items-center gap-1"><i data-lucide="check" class="w-3.5 h-3.5"></i> Zero Residue</span>
+              <button onclick="selectCleanupMaterial('mechanical')" class="px-3 py-1 bg-ocean-800 hover:bg-ocean-700 text-slate-200 rounded transition border border-ocean-700">
+                Select
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Bioremediation & Safety Warnings -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+          <div class="bg-ocean-900 border border-ocean-800 rounded-xl p-5">
+            <h3 class="text-xs font-semibold text-teal-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+              <i data-lucide="dna" class="w-4 h-4"></i> Secondary Stage: Bioremediation Consortium
+            </h3>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              For residual hydrocarbon sheen post-mechanical skimming, recommend inoculation with native marine hydrocarbonoclastic bacteria (<span class="italic text-teal-300">Alcanivorax borkumensis SK2</span> & <span class="italic text-teal-300">Cycloclasticus sp.</span>) paired with controlled-release nitrogen-phosphorus nutrients.
+            </p>
+            <div class="mt-3 p-3 bg-ocean-950 rounded-lg text-xs space-y-1 text-slate-400 border border-ocean-800">
+              <div class="flex justify-between"><span>Degradation Kinetics:</span> <span class="text-slate-200 font-mono">k = 0.048 day⁻¹</span></div>
+              <div class="flex justify-between"><span>Prerequisite:</span> <span class="text-teal-400">Dissolved Oxygen &gt; 5.0 mg/L</span></div>
+            </div>
+          </div>
+
+          <div class="bg-ocean-900 border border-ocean-800 rounded-xl p-5">
+            <h3 class="text-xs font-semibold text-coral-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+              <i data-lucide="alert-triangle" class="w-4 h-4"></i> Chemical Dispersant Precaution
+            </h3>
+            <p class="text-xs text-slate-300 leading-relaxed">
+              Standard synthetic surfactant dispersants (e.g. Corexit 9500) <strong class="text-coral-400">are strictly disadvised</strong> in this zone due to shallow water (&lt; 20m depth) and immediate proximity to stony coral colonies, as sinking chemically-dispersed oil droplets induce acute bleaching and larval mortality.
+            </p>
+            <div class="mt-3 p-3 bg-coral-950/30 rounded-lg text-xs text-coral-300 border border-coral-800/40 flex items-center gap-2">
+              <i data-lucide="shield-x" class="w-4 h-4 text-coral-400 shrink-0"></i>
+              <span>Restricted by Regional Marine Emergency Contingency Plan Section 4.3</span>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==============================================
+           TAB 5: RESOURCE OPTIMIZATION (Module 5)
+      =============================================== -->
+      <section id="tab-resources" class="tab-panel hidden space-y-6">
+        <div class="bg-ocean-900 border border-ocean-800 p-4 rounded-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+          <div>
+            <h2 class="text-lg font-bold text-white flex items-center gap-2">
+              <i data-lucide="boxes" class="w-5 h-5 text-teal-400"></i> Module 5: Logistics & Stockpile Resource Optimizer
+            </h2>
+            <p class="text-xs text-slate-400">Mathematical balancing of required containment equipment against depot inventories</p>
+          </div>
+          <button onclick="recalculateResources()" class="px-3 py-1.5 rounded-lg bg-teal-500 hover:bg-teal-400 text-ocean-950 font-bold text-xs flex items-center gap-1.5">
+            <i data-lucide="calculator" class="w-3.5 h-3.5"></i> Run Optimization Solver
+          </button>
+        </div>
+
+        <!-- Inventory vs Need Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div class="bg-ocean-900 border border-ocean-800 rounded-xl p-4">
+            <span class="text-xs text-slate-400">Nanocellulose Sorbent Need</span>
+            <div class="flex items-baseline justify-between mt-1">
+              <h3 class="text-2xl font-bold font-mono text-white" id="res-sorbent-req">23.6 Tons</h3>
+              <span class="text-xs text-emerald-400 font-mono">Stock: 35.0 T</span>
+            </div>
+            <div class="w-full bg-ocean-950 rounded-full h-1.5 mt-2">
+              <div class="bg-emerald-500 h-1.5 rounded-full" style="width: 67%"></div>
+            </div>
+            <p class="text-[11px] text-emerald-400 mt-1">Stock Surplus: +11.4 Tons</p>
+          </div>
+
+          <div class="bg-ocean-900 border border-ocean-800 rounded-xl p-4">
+            <span class="text-xs text-slate-400">Containment Booms Required</span>
+            <div class="flex items-baseline justify-between mt-1">
+              <h3 class="text-2xl font-bold font-mono text-white" id="res-booms-req">4,200 m</h3>
+              <span class="text-xs text-coral-400 font-mono">Stock: 3,500 m</span>
+            </div>
+            <div class="w-full bg-ocean-950 rounded-full h-1.5 mt-2">
+              <div class="bg-coral-500 h-1.5 rounded-full" style="width: 100%"></div>
+            </div>
+            <p class="text-[11px] text-coral-400 mt-1">Deficit: -700 m (Mutual Aid Req.)</p>
+          </div>
+
+          <div class="bg-ocean-900 border border-ocean-800 rounded-xl p-4">
+            <span class="text-xs text-slate-400">Offshore Skimmer Units</span>
+            <div class="flex items-baseline justify-between mt-1">
+              <h3 class="text-2xl font-bold font-mono text-white" id="res-skimmers-req">6 Units</h3>
+              <span class="text-xs text-teal-400 font-mono">Stock: 8 Units</span>
+            </div>
+            <div class="w-full bg-ocean-950 rounded-full h-1.5 mt-2">
+              <div class="bg-teal-500 h-1.5 rounded-full" style="width: 75%"></div>
+            </div>
+            <p class="text-[11px] text-teal-400 mt-1">Ready for deployment (Base Miami)</p>
+          </div>
+
+          <div class="bg-ocean-900 border border-ocean-800 rounded-xl p-4">
+            <span class="text-xs text-slate-400">Total Estimated Cost (USD)</span>
+            <div class="flex items-baseline justify-between mt-1">
+              <h3 class="text-2xl font-bold font-mono text-amber-300" id="res-total-cost">$184,500</h3>
+              <span class="text-xs text-slate-400 font-mono">3-Day Op</span>
+            </div>
+            <div class="w-full bg-ocean-950 rounded-full h-1.5 mt-2">
+              <div class="bg-amber-500 h-1.5 rounded-full" style="width: 55%"></div>
+            </div>
+            <p class="text-[11px] text-slate-400 mt-1">Incl. Vessel fuel, labor, disposal</p>
+          </div>
+        </div>
+
+        <!-- Detailed Allocation Schedule & Chart -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          <div class="lg:col-span-7 bg-ocean-900 border border-ocean-800 rounded-xl p-5">
+            <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">Stockpile Inventory vs Spill Demand (Gap Analysis)</h3>
+            <div class="h-64 relative">
+              <canvas id="resourceBarChart"></canvas>
+            </div>
+          </div>
+
+          <div class="lg:col-span-5 bg-ocean-900 border border-ocean-800 rounded-xl p-5 flex flex-col justify-between">
+            <div>
+              <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-3">Optimal Tactical Mobilization Plan</h3>
+              <div class="space-y-3 text-xs">
+                <div class="flex items-start gap-3 p-2.5 bg-ocean-950 rounded-lg border border-ocean-800">
+                  <span class="font-mono text-teal-400 font-bold">H+0 to 4h:</span>
+                  <div>
+                    <strong class="text-white">Rapid Containment Boom Deployment</strong>
+                    <p class="text-[11px] text-slate-400">Deploy 2,000m curtain boom at channel choke-point to protect Biscayne Barrier Reef.</p>
+                  </div>
+                </div>
+
+                <div class="flex items-start gap-3 p-2.5 bg-ocean-950 rounded-lg border border-ocean-800">
+                  <span class="font-mono text-teal-400 font-bold">H+4 to 12h:</span>
+                  <div>
+                    <strong class="text-white">Active Mechanical Skimming</strong>
+                    <p class="text-[11px] text-slate-400">Deploy 4 offshore weir skimmers with 2 support tugs. Pump rate target: 120 m³/hr.</p>
+                  </div>
+                </div>
+
+                <div class="flex items-start gap-3 p-2.5 bg-ocean-950 rounded-lg border border-ocean-800">
+                  <span class="font-mono text-teal-400 font-bold">H+12 to 36h:</span>
+                  <div>
+                    <strong class="text-white">Bio-Aerogel Dispersal & Sheen Absorption</strong>
+                    <p class="text-[11px] text-slate-400">Distribute 15 tons of nanocellulose bio-sorbent along shallow coastal buffer.</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="mt-4 pt-3 border-t border-ocean-800">
+              <button onclick="requestEmergencySupplies()" class="w-full py-2 bg-coral-500 hover:bg-coral-400 text-ocean-950 font-bold rounded-lg text-xs transition flex items-center justify-center gap-2">
+                <i data-lucide="send" class="w-3.5 h-3.5"></i> Transmit Mutual Aid Requisition (-700m Booms)
+              </button>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- ==============================================
+           TAB 6: INCIDENTS & HISTORICAL DATABASE (Module 6)
+      =============================================== -->
+      <section id="tab-incidents" class="tab-panel hidden space-y-6">
+        <div class="bg-ocean-900 border border-ocean-800 p-4 rounded-xl flex flex-col md:flex-row justify-between items-start md:items-center gap-3">
+          <div>
+            <h2 class="text-lg font-bold text-white flex items-center gap-2">
+              <i data-lucide="database" class="w-5 h-5 text-teal-400"></i> Module 6: Incident Ledger & Environmental Auditing
+            </h2>
+            <p class="text-xs text-slate-400">IndexedDB local database with formatted CSV and PDF compliance reporting</p>
+          </div>
+          <div class="flex items-center gap-2">
+            <button onclick="saveCurrentIncidentToDB()" class="px-3 py-1.5 rounded-lg bg-teal-500 hover:bg-teal-400 text-ocean-950 font-bold text-xs flex items-center gap-1.5 shadow">
+              <i data-lucide="save" class="w-3.5 h-3.5"></i> Save Current Mission
+            </button>
+            <button onclick="exportIncidentsCSV()" class="px-3 py-1.5 rounded-lg bg-ocean-800 hover:bg-ocean-700 text-slate-200 border border-ocean-700 text-xs flex items-center gap-1.5">
+              <i data-lucide="download" class="w-3.5 h-3.5"></i> Export CSV
+            </button>
+          </div>
+        </div>
+
+        <!-- Incidents Table -->
+        <div class="bg-ocean-900 border border-ocean-800 rounded-xl p-5 overflow-hidden">
+          <div class="flex justify-between items-center mb-4">
+            <h3 class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Mission History Records</h3>
+            <span class="text-xs text-slate-400" id="db-record-count">Showing 3 logged incidents</span>
+          </div>
+          
+          <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+              <thead class="text-slate-400 border-b border-ocean-800 uppercase text-[11px]">
+                <tr>
+                  <th class="pb-2.5">ID</th>
+                  <th class="pb-2.5">Date / Time</th>
+                  <th class="pb-2.5">Location</th>
+                  <th class="pb-2.5">Area</th>
+                  <th class="pb-2.5">Risk Rating</th>
+                  <th class="pb-2.5">Primary Tech</th>
+                  <th class="pb-2.5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="incidents-table-body" class="divide-y divide-ocean-850 text-slate-300">
+                <!-- Injected via JavaScript -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <!-- ==============================================
+       FASTAPI ENDPOINTS TEST PLAYGROUND MODAL
+  =============================================== -->
+  <div id="api-modal" class="fixed inset-0 bg-ocean-950/80 backdrop-blur-sm z-50 hidden flex items-center justify-center p-4">
+    <div class="bg-ocean-900 border border-ocean-700 rounded-xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl overflow-hidden">
+      <div class="p-4 border-b border-ocean-800 flex justify-between items-center bg-ocean-850">
+        <div class="flex items-center gap-2">
+          <i data-lucide="terminal" class="w-5 h-5 text-teal-400"></i>
+          <h3 class="font-bold text-white text-sm">EcoSpill FastAPI REST Explorer & Sync Bridge</h3>
+        </div>
+        <button onclick="closeApiModal()" class="text-slate-400 hover:text-white">
+          <i data-lucide="x" class="w-5 h-5"></i>
+        </button>
+      </div>
+
+      <div class="p-5 overflow-y-auto space-y-4 text-xs font-mono">
+        <p class="text-slate-300 font-sans">
+          EcoSpill supports two execution modes: <strong>Direct In-Browser Edge ML</strong> (zero-backend instant execution) and <strong>FastAPI Backend Sync</strong> (`http://localhost:8000`). Test and inspect the contract below:
+        </p>
+
+        <!-- API Selector -->
+        <div class="flex gap-2">
+          <select id="api-endpoint-select" class="flex-1 bg-ocean-950 border border-ocean-800 text-teal-300 p-2 rounded">
+            <option value="/detect">POST /detect (Spectral Image Oil Slick Detection)</option>
+            <option value="/predict-spread">POST /predict-spread (Lagrangian Ocean Drift Model)</option>
+            <option value="/assess-risk">POST /assess-risk (Composite ESI Vulnerability Score)</option>
+            <option value="/recommend-cleanup">POST /recommend-cleanup (Bio-Sorbent Decision Engine)</option>
+            <option value="/optimize-resources">POST /optimize-resources (Logistics Matrix)</option>
+            <option value="/incidents">GET /incidents (Database Records)</option>
+          </select>
+          <button onclick="executeApiTest()" class="px-4 py-2 bg-teal-500 hover:bg-teal-400 text-ocean-950 font-bold rounded">
+            Send Request
+          </button>
+        </div>
+
+        <!-- Request Body / Payload -->
+        <div>
+          <span class="text-slate-400 block mb-1">Payload Request (JSON):</span>
+          <pre id="api-payload-display" class="p-3 bg-ocean-950 rounded border border-ocean-800 text-slate-300 overflow-x-auto max-h-40">{
+  "sensor_telemetry": {
+    "wind_knots": 16.5,
+    "wind_direction_deg": 135,
+    "current_speed_ms": 0.75,
+    "water_temp_c": 23.4
+  },
+  "slick_extent_km2": 14.8
+}</pre>
+        </div>
+
+        <!-- Response Body -->
+        <div>
+          <span class="text-slate-400 block mb-1">Server Response (HTTP 200 OK):</span>
+          <pre id="api-response-display" class="p-3 bg-ocean-950 rounded border border-ocean-800 text-emerald-400 overflow-x-auto max-h-48">// Click 'Send Request' to test response...</pre>
+        </div>
+      </div>
+
+      <div class="p-3 bg-ocean-850 border-t border-ocean-800 flex justify-between items-center text-[11px] text-slate-400">
+        <span>FastAPI v0.110+ compatible schema</span>
+        <button onclick="closeApiModal()" class="px-3 py-1 bg-ocean-800 hover:bg-ocean-700 text-slate-200 rounded">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Printable PDF/Report View (hidden on screen, active in print mode) -->
+  <div id="printable-report" class="hidden p-8 bg-white text-black font-sans">
+    <div style="border-bottom: 2px solid #000; padding-bottom: 12px; margin-bottom: 20px;">
+      <h1 style="font-size: 24px; font-weight: bold; margin: 0;">EcoSpill Marine Environmental Emergency Briefing</h1>
+      <p style="font-size: 12px; color: #555; margin: 4px 0 0 0;">National Maritime Pollution Response Authority &middot; Automated AI Decision Support</p>
+    </div>
+    
+    <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px; font-size: 13px; margin-bottom: 20px;">
+      <div>
+        <p><strong>Incident Reference:</strong> <span id="rep-id">INC-2026-9042</span></p>
+        <p><strong>Geographic Coordinates:</strong> 25.320° N, -80.080° W (Florida Straits)</p>
+        <p><strong>Detection Timestamp:</strong> <span id="rep-time">Oct 12, 2026 14:30 UTC</span></p>
+        <p><strong>Detection Method:</strong> Synthetic Aperture Radar (SAR) + Optical Overlay</p>
+      </div>
+      <div>
+        <p><strong>Overall Risk Assessment:</strong> <span style="color: #b91c1c; font-weight: bold;">CRITICAL (88/100)</span></p>
+        <p><strong>Estimated Spill Extent:</strong> 14.8 km² (~1,180 m³)</p>
+        <p><strong>Dominant Hydrodynamic Drift:</strong> 2.14 kts @ 318° NW</p>
+        <p><strong>Shoreline Proximity:</strong> 4.8 km (Biscayne Barrier Reef)</p>
+      </div>
+    </div>
+
+    <div style="border: 1px solid #ccc; padding: 12px; border-radius: 4px; margin-bottom: 20px; font-size: 12px;">
+      <h3 style="font-weight: bold; margin-top: 0;">Recommended Sustainable Strategy:</h3>
+      <p>1. Deploy 4,200 meters of deflection curtain booms to divert oil away from coral reefs.</p>
+      <p>2. Stage 4 Weir skimmers for continuous physical hydrocarbon collection in open channel.</p>
+      <p>3. Apply 23.6 metric tons of modified Nanocellulose Bio-Aerogel (biodegradable sorbent) to mitigate coastal shoreline slick.</p>
+      <p style="color: #c2410c;"><strong>CAUTION:</strong> Synthetic chemical dispersants prohibited within 5 NM of designated marine protected areas.</p>
+    </div>
+
+    <div style="font-size: 11px; color: #777; border-top: 1px solid #ddd; padding-top: 10px;">
+      Generated automatically by EcoSpill Decision Support Engine. For official distribution to Coast Guard, EPA, and Maritime Environmental Response Commands.
+    </div>
+  </div>
+
+  <script>
+    /* =========================================================================
+       ECOSPILL CORE ENGINE - STATE AND CONTROLLER
+       ========================================================================= */
+
+    // Global Application State
+    const AppState = {
+      incident: {
+        id: "INC-2026-9042",
+        timestamp: new Date().toISOString(),
+        location: "Florida Straits (Biscayne Outer)",
+        lat: 25.320,
+        lon: -80.080,
+        slickAreaKm2: 14.8,
+        thicknessMm: 0.08,
+        oilType: "Heavy Fuel Oil (HFO)",
+        confidence: 94.6,
+        status: "Oil Spill Detected",
+        riskIndex: 88,
+        riskLevel: "Critical Risk",
+        primaryTech: "Nanocellulose Bio-Aerogel",
+        telemetry: {
+          windSpeed: 16.5,
+          windDir: 135,
+          currentSpeed: 0.75,
+          waterTemp: 23.4,
+          ppm: 482
+        }
+      },
+      currentTab: 'dashboard',
+      forecastHour: 24,
+      maps: {
+        dashMini: null,
+        spread: null
+      },
+      mapLayers: {
+        dashMarkers: [],
+        slickPolygon: null,
+        reefPolygons: [],
+        driftTrajectory: null
+      },
+      charts: {
+        riskRadar: null,
+        resourceBar: null
+      },
+      vision: {
+        image: null,
+        hasSlick: true,
+        detectedContours: [],
+        showMask: true,
+        showHeatmap: false
+      },
+      incidentsDB: [
+        {
+          id: "INC-2026-9042",
+          timestamp: "2026-10-12 14:30",
+          location: "Florida Straits Outer",
+          area: "14.8 km²",
+          risk: "Critical (88)",
+          tech: "Cellulose Aerogel & Weir Skimmers"
+        },
+        {
+          id: "INC-2026-8819",
+          timestamp: "2026-09-28 09:15",
+          location: "Gulf Channel 4",
+          area: "4.2 km²",
+          risk: "Moderate (48)",
+          tech: "Rice Husk Booms"
+        },
+        {
+          id: "INC-2026-7930",
+          timestamp: "2026-08-14 21:05",
+          location: "Tampa Offshore Shoal",
+          area: "28.5 km²",
+          risk: "Critical (94)",
+          tech: "Offshore Skimming Taskforce"
+        }
+      ]
+    };
+
+    // Initialize on window load
+    window.addEventListener('DOMContentLoaded', () => {
+      lucide.createIcons();
+      initVisionCanvas();
+      initCharts();
+      initLeafletMaps();
+      renderIncidentsTable();
+      updateSensorValues();
+      loadSamplePreset('sar');
+    });
+
+    /* =========================================================================
+       NAVIGATION AND TAB SWITCHING
+       ========================================================================= */
+    function switchTab(tabId) {
+      AppState.currentTab = tabId;
+      document.querySelectorAll('.tab-panel').forEach(el => el.classList.add('hidden'));
+      
+      const target = document.getElementById(`tab-${tabId}`);
+      if (target) target.classList.remove('hidden');
+
+      // Update nav styling
+      const navButtons = [
+        'nav-dashboard', 'nav-detection', 'nav-prediction', 
+        'nav-risk', 'nav-cleanup', 'nav-resources', 'nav-incidents'
+      ];
+      
+      navButtons.forEach(id => {
+        const btn = document.getElementById(id);
+        if (btn) {
+          if (id === `nav-${tabId}`) {
+            btn.className = "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition text-teal-400 bg-ocean-800/80 border border-teal-500/30";
+          } else {
+            btn.className = "w-full flex items-center gap-3 px-3.5 py-2.5 rounded-lg text-sm font-medium transition text-slate-300 hover:text-white hover:bg-ocean-800";
+          }
+        }
+      });
+
+      // Update Top Title
+      const titles = {
+        dashboard: "Command Center Overview",
+        detection: "Module 1 &middot; AI Image Detection & Contours",
+        prediction: "Module 2 &middot; Ocean Drift Spread Prediction",
+        risk: "Module 3 &middot; Marine Habitat Vulnerability Risk",
+        cleanup: "Module 4 &middot; Sustainable Cleanup Strategies",
+        resources: "Module 5 &middot; Logistics & Resource Matrix",
+        incidents: "Module 6 &middot; Incident Ledger & Export"
+      };
+      document.getElementById('top-title').innerHTML = titles[tabId] || "Command Center";
+
+      // Invalidate map sizes if maps are in revealed tab
+      setTimeout(() => {
+        if (tabId === 'dashboard' && AppState.maps.dashMini) {
+          AppState.maps.dashMini.invalidateSize();
+        }
+        if (tabId === 'prediction' && AppState.maps.spread) {
+          AppState.maps.spread.invalidateSize();
+        }
+        if (tabId === 'resources' && AppState.charts.resourceBar) {
+          AppState.charts.resourceBar.resize();
+        }
+      }, 100);
+
+      lucide.createIcons();
+    }
+
+    /* =========================================================================
+       MODULE 1: COMPUTER VISION & SPECTRAL ANALYSIS
+       ========================================================================= */
+    const canvas = document.getElementById('vision-canvas');
+    const ctx = canvas.getContext('2d');
+
+    function initVisionCanvas() {
+      canvas.width = 640;
+      canvas.height = 360;
+      drawPlaceholderCanvas();
+
+      // Drag and drop event listeners
+      const dropZone = document.getElementById('drop-zone');
+      dropZone.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        dropZone.classList.add('border-teal-400');
+      });
+      dropZone.addEventListener('dragleave', () => {
+        dropZone.classList.remove('border-teal-400');
+      });
+      dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('border-teal-400');
+        if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+          processImageFile(e.dataTransfer.files[0]);
+        }
+      });
+    }
+
+    function drawPlaceholderCanvas() {
+      ctx.fillStyle = '#071626';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      
+      // Draw ocean grid lines
+      ctx.strokeStyle = '#112e4f';
+      ctx.lineWidth = 1;
+      for (let x = 0; x < canvas.width; x += 40) {
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, canvas.height);
+        ctx.stroke();
+      }
+      for (let y = 0; y < canvas.height; y += 40) {
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(canvas.width, y);
+        ctx.stroke();
+      }
+    }
+
+    function handleFileUpload(event) {
+      if (event.target.files && event.target.files[0]) {
+        processImageFile(event.target.files[0]);
+      }
+    }
+
+    function processImageFile(file) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          AppState.vision.image = img;
+          document.getElementById('upload-placeholder').classList.add('hidden');
+          runAiDetectionPipeline();
+        };
+        img.src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+      showToast(`Loaded ${file.name} for AI analysis`, 'info');
+    }
+
+    function loadSamplePreset(type) {
+      const img = new Image();
+      // Generate synthetic high-res ocean canvas presets
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = 640;
+      tempCanvas.height = 360;
+      const tctx = tempCanvas.getContext('2d');
+
+      if (type === 'sar') {
+        // Synthetic SAR Image: Dark backscatter slick on noisy gray-blue water
+        tctx.fillStyle = '#1e3a5f';
+        tctx.fillRect(0, 0, 640, 360);
+        // Add speckle noise
+        for (let i = 0; i < 4000; i++) {
+          tctx.fillStyle = Math.random() > 0.5 ? '#2b4d77' : '#142842';
+          tctx.fillRect(Math.random() * 640, Math.random() * 360, 2, 2);
+        }
+        // Oil slick dampens capillary waves -> very low backscatter (dark organic shape)
+        tctx.fillStyle = '#08111e';
+        tctx.beginPath();
+        tctx.ellipse(320, 180, 150, 75, Math.PI / 6, 0, Math.PI * 2);
+        tctx.fill();
+        // Feathered trails
+        tctx.beginPath();
+        tctx.ellipse(440, 140, 80, 35, Math.PI / 4, 0, Math.PI * 2);
+        tctx.fill();
+        AppState.vision.hasSlick = true;
+        AppState.incident.confidence = 96.2;
+        AppState.incident.oilType = "Heavy Bunker Fuel (SAR Decibel Depression -28dB)";
+      } else if (type === 'drone') {
+        // Drone RGB: Deep turquoise water with iridescent brown sheen
+        tctx.fillStyle = '#0284c7';
+        tctx.fillRect(0, 0, 640, 360);
+        // Sun glint and waves
+        for (let y = 0; y < 360; y += 15) {
+          tctx.strokeStyle = '#38bdf8';
+          tctx.beginPath();
+          tctx.moveTo(0, y);
+          tctx.bezierCurveTo(200, y + 10, 400, y - 10, 640, y);
+          tctx.stroke();
+        }
+        // Heavy dark brown oil slick
+        tctx.fillStyle = 'rgba(30, 20, 10, 0.88)';
+        tctx.beginPath();
+        tctx.ellipse(300, 200, 140, 60, -Math.PI / 8, 0, Math.PI * 2);
+        tctx.fill();
+        AppState.vision.hasSlick = true;
+        AppState.incident.confidence = 93.8;
+        AppState.incident.oilType = "Crude Oil Slick (RGB Spectral Signature)";
+      } else {
+        // Clean Ocean: pure blue ripple with no slick
+        tctx.fillStyle = '#0369a1';
+        tctx.fillRect(0, 0, 640, 360);
+        for (let i = 0; i < 1500; i++) {
+          tctx.fillStyle = '#0284c7';
+          tctx.fillRect(Math.random() * 640, Math.random() * 360, 3, 2);
+        }
+        AppState.vision.hasSlick = false;
+        AppState.incident.confidence = 98.4;
+        AppState.incident.oilType = "Clean Water Baseline";
+      }
+
+      img.onload = () => {
+        AppState.vision.image = img;
+        document.getElementById('upload-placeholder').classList.add('hidden');
+        runAiDetectionPipeline();
+      };
+      img.src = tempCanvas.toDataURL();
+      showToast(`Loaded ${type.toUpperCase()} imagery sample`, 'info');
+    }
+
+    function runAiDetectionPipeline() {
+      const scanner = document.getElementById('scanner-overlay');
+      scanner.classList.remove('hidden');
+      
+      const btn = document.getElementById('btn-run-ai');
+      btn.disabled = true;
+      btn.innerHTML = `<i data-lucide="loader-2" class="w-4 h-4 animate-spin"></i> Processing Neural Layers...`;
+      lucide.createIcons();
+
+      setTimeout(() => {
+        scanner.classList.add('hidden');
+        btn.disabled = false;
+        btn.innerHTML = `<i data-lucide="sparkles" class="w-4 h-4"></i> Execute AI Inference`;
+        lucide.createIcons();
+
+        // Extract contours and draw
+        computeContours();
+        redrawVisionCanvas();
+        updateVerdictUI();
+        showToast('AI Segmentation Complete: 14.8 km² slick identified', 'success');
+      }, 1200);
+    }
+
+    function computeContours() {
+      if (!AppState.vision.hasSlick) {
+        AppState.vision.detectedContours = [];
+        return;
+      }
+      // Synthetic segmentation polygons matching the slick
+      AppState.vision.detectedContours = [
+        {
+          points: [
+            {x: 180, y: 140}, {x: 230, y: 120}, {x: 320, y: 110}, 
+            {x: 410, y: 130}, {x: 480, y: 170}, {x: 440, y: 230}, 
+            {x: 350, y: 250}, {x: 240, y: 240}, {x: 180, y: 190}
+          ],
+          severity: 'Heavy',
+          color: 'rgba(244, 63, 94, 0.4)'
+        },
+        {
+          points: [
+            {x: 430, y: 120}, {x: 490, y: 110}, {x: 520, y: 135}, 
+            {x: 480, y: 160}, {x: 420, y: 145}
+          ],
+          severity: 'Moderate Sheen',
+          color: 'rgba(251, 191, 36, 0.4)'
+        }
+      ];
+    }
+
+    function redrawVisionCanvas() {
+      if (!AppState.vision.image) {
+        drawPlaceholderCanvas();
+        return;
+      }
+
+      ctx.drawImage(AppState.vision.image, 0, 0, canvas.width, canvas.height);
+
+      const showMask = document.getElementById('toggle-segmentation')?.checked ?? true;
+      const showHeatmap = document.getElementById('toggle-heatmap')?.checked ?? false;
+
+      if (showHeatmap && AppState.vision.hasSlick) {
+        // Draw thermal oil thickness gradient
+        const grad = ctx.createRadialGradient(320, 180, 20, 320, 180, 160);
+        grad.addColorStop(0, 'rgba(244, 63, 94, 0.7)');
+        grad.addColorStop(0.5, 'rgba(245, 158, 11, 0.5)');
+        grad.addColorStop(0.8, 'rgba(45, 212, 191, 0.3)');
+        grad.addColorStop(1, 'transparent');
+        ctx.fillStyle = grad;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+      }
+
+      if (showMask && AppState.vision.detectedContours.length > 0) {
+        AppState.vision.detectedContours.forEach((contour) => {
+          ctx.beginPath();
+          ctx.moveTo(contour.points[0].x, contour.points[0].y);
+          for (let i = 1; i < contour.points.length; i++) {
+            ctx.lineTo(contour.points[i].x, contour.points[i].y);
+          }
+          ctx.closePath();
+          
+          ctx.fillStyle = contour.color;
+          ctx.fill();
+          
+          ctx.strokeStyle = '#2dd4bf';
+          ctx.lineWidth = 2;
+          ctx.setLineDash([4, 2]);
+          ctx.stroke();
+          ctx.setLineDash([]);
+
+          // Draw label
+          ctx.fillStyle = '#ffffff';
+          ctx.font = 'bold 10px monospace';
+          ctx.fillText(`AI CONTOUR: ${contour.severity}`, contour.points[0].x, contour.points[0].y - 6);
+        });
+      }
+    }
+
+    function updateVerdictUI() {
+      const statusEl = document.getElementById('verdict-status');
+      const confEl = document.getElementById('verdict-confidence');
+      const typeEl = document.getElementById('verdict-type');
+      const iconEl = document.getElementById('verdict-icon');
+      const boxEl = document.getElementById('detection-verdict-box');
+
+      if (AppState.vision.hasSlick) {
+        statusEl.innerText = "OIL SPILL DETECTED";
+        statusEl.className = "font-bold text-coral-400 text-sm";
+        confEl.innerText = `${AppState.incident.confidence.toFixed(1)}%`;
+        typeEl.innerText = AppState.incident.oilType;
+        iconEl.className = "w-8 h-8 rounded-full bg-coral-500/20 text-coral-400 flex items-center justify-center";
+        iconEl.innerHTML = `<i data-lucide="alert-octagon" class="w-5 h-5"></i>`;
+        boxEl.className = "flex items-center justify-between p-3.5 rounded-lg bg-coral-950/20 border border-coral-800/40 mb-3";
+      } else {
+        statusEl.innerText = "NO OIL SPILL DETECTED";
+        statusEl.className = "font-bold text-emerald-400 text-sm";
+        confEl.innerText = `${AppState.incident.confidence.toFixed(1)}%`;
+        typeEl.innerText = "Clean Sea Surface Baseline";
+        iconEl.className = "w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center";
+        iconEl.innerHTML = `<i data-lucide="check" class="w-5 h-5"></i>`;
+        boxEl.className = "flex items-center justify-between p-3.5 rounded-lg bg-emerald-950/20 border border-emerald-800/40 mb-3";
+      }
+      lucide.createIcons();
+    }
+
+    function updateSensorValues() {
+      const windSpeed = parseFloat(document.getElementById('input-wind-speed').value);
+      const windDir = parseInt(document.getElementById('input-wind-dir').value);
+      const currentSpeed = parseFloat(document.getElementById('input-current-speed').value);
+      const waterTemp = parseFloat(document.getElementById('input-water-temp').value);
+
+      document.getElementById('val-wind-speed').innerText = `${windSpeed} kts`;
+      document.getElementById('val-wind-dir').innerText = `${windDir}° (${degToCompass(windDir)})`;
+
+      AppState.incident.telemetry.windSpeed = windSpeed;
+      AppState.incident.telemetry.windDir = windDir;
+      AppState.incident.telemetry.currentSpeed = currentSpeed;
+      AppState.incident.telemetry.waterTemp = waterTemp;
+    }
+
+    function degToCompass(num) {
+      const val = Math.floor((num / 22.5) + 0.5);
+      const arr = ["N", "NNE", "NE", "ENE", "E", "ESE", "SE", "SSE", "S", "SSW", "SW", "WSW", "W", "WNW", "NW", "NNW"];
+      return arr[(val % 16)];
+    }
+
+    function syncSensorToSimulator() {
+      showToast('Environmental telemetry pushed to ocean drift equations', 'success');
+      recalculateDriftSim();
+      switchTab('prediction');
+    }
+
+    /* =========================================================================
+       MODULE 2: HYDRODYNAMIC DRIFT MAP & SIMULATION
+       ========================================================================= */
+    function initLeafletMaps() {
+      // 1. Dashboard Mini Map
+      AppState.maps.dashMini = L.map('dash-mini-map', {
+        zoomControl: false,
+        attributionControl: false
+      }).setView([25.32, -80.08], 10);
+
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 18
+      }).addTo(AppState.maps.dashMini);
+
+      // Add spill marker on mini map
+      L.circleMarker([25.32, -80.08], {
+        radius: 8,
+        color: '#fb7185',
+        fillColor: '#f43f5e',
+        fillOpacity: 0.8
+      }).addTo(AppState.maps.dashMini);
+
+      // 2. Full Prediction Map
+      AppState.maps.spread = L.map('spread-map', {
+        zoomControl: true,
+        attributionControl: false
+      }).setView([25.32, -80.08], 10);
+
+      L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+        maxZoom: 18
+      }).addTo(AppState.maps.spread);
+
+      // Add environmental boundary overlays (Coral Reef Protected Areas)
+      const coralReefPolygon = L.polygon([
+        [25.39, -80.14],
+        [25.43, -80.12],
+        [25.38, -80.09],
+        [25.35, -80.11]
+      ], {
+        color: '#fb7185',
+        fillColor: '#f43f5e',
+        fillOpacity: 0.25,
+        weight: 1.5,
+        dashArray: '4, 4'
+      }).addTo(AppState.maps.spread);
+      coralReefPolygon.bindTooltip("<b>Biscayne Coral Ridge MPA</b><br>Acropora Palmata Priority Sanctuary", { sticky: true });
+
+      // Add Mangrove Estuary
+      const mangrovePolygon = L.polygon([
+        [25.45, -80.19],
+        [25.50, -80.16],
+        [25.46, -80.14],
+        [25.42, -80.17]
+      ], {
+        color: '#10b981',
+        fillColor: '#10b981',
+        fillOpacity: 0.2,
+        weight: 1.5
+      }).addTo(AppState.maps.spread);
+      mangrovePolygon.bindTooltip("<b>Oleta River Mangrove Wetland</b><br>ESI-10D Critical Shoreline", { sticky: true });
+
+      // Draw active slick simulation
+      drawSlickPrediction(AppState.forecastHour);
+    }
+
+    function drawSlickPrediction(hours) {
+      if (!AppState.maps.spread) return;
+
+      // Clear existing dynamic layers
+      if (AppState.mapLayers.slickPolygon) {
+        AppState.maps.spread.removeLayer(AppState.mapLayers.slickPolygon);
+      }
+      if (AppState.mapLayers.driftTrajectory) {
+        AppState.maps.spread.removeLayer(AppState.mapLayers.driftTrajectory);
+      }
+
+      const origin = [25.320, -80.080];
+      
+      // Calculate advection displacement
+      // Windage = 3.5% of wind, surface current = 100%
+      const windKts = AppState.incident.telemetry.windSpeed;
+      const windDirRad = (AppState.incident.telemetry.windDir * Math.PI) / 180;
+      // Drift is opposite to where wind comes from + Coriolis deflection (~15 deg right in Northern hemisphere)
+      const driftAngle = windDirRad + Math.PI + (15 * Math.PI / 180);
+      
+      // Displacement velocity in degrees (approx 1 knot = 0.00027 deg/hr)
+      const driftVelocityDegPerHour = 0.0006 * (windKts * 0.035 + AppState.incident.telemetry.currentSpeed);
+      
+      const dLat = Math.cos(driftAngle) * driftVelocityDegPerHour * hours;
+      const dLon = Math.sin(driftAngle) * driftVelocityDegPerHour * hours;
+      
+      const centerLat = origin[0] + dLat;
+      const centerLon = origin[1] + dLon;
+
+      // Spreading radius grows with sqrt(time) according to Fay's formulation
+      const baseRadius = 0.02 + Math.sqrt(hours + 1) * 0.015;
+
+      // Draw trajectory line
+      const trajectoryPoints = [
+        origin,
+        [origin[0] + dLat * 0.5, origin[1] + dLon * 0.5],
+        [centerLat, centerLon]
+      ];
+      AppState.mapLayers.driftTrajectory = L.polyline(trajectoryPoints, {
+        color: '#2dd4bf',
+        dashArray: '6, 6',
+        weight: 2.5
+      }).addTo(AppState.maps.spread);
+
+      // Draw oil slick expansion polygon
+      const slickCoords = [];
+      const steps = 18;
+      for (let i = 0; i < steps; i++) {
+        const theta = (i / steps) * Math.PI * 2;
+        // Asymmetric distortion along drift axis
+        const elongation = 1.0 + 0.6 * Math.cos(theta - driftAngle);
+        const r = baseRadius * elongation;
+        slickCoords.push([
+          centerLat + Math.cos(theta) * r,
+          centerLon + Math.sin(theta) * r * 1.2
+        ]);
+      }
+
+      AppState.mapLayers.slickPolygon = L.polygon(slickCoords, {
+        color: '#2dd4bf',
+        fillColor: '#071626',
+        fillOpacity: 0.75,
+        weight: 2
+      }).addTo(AppState.maps.spread);
+
+      AppState.mapLayers.slickPolygon.bindPopup(`
+        <div class="text-xs font-sans text-ocean-950 p-1">
+          <b>Projected Slick at T+${hours}h</b><br>
+          Center: ${centerLat.toFixed(3)}°N, ${centerLon.toFixed(3)}°W<br>
+          Estimated Area: ${(14.8 + hours * 0.82).toFixed(1)} km²<br>
+          Wave-current dispersion rate: Active
+        </div>
+      `);
+    }
+
+    function onForecastSliderChange(val) {
+      AppState.forecastHour = parseInt(val);
+      document.getElementById('label-forecast-hour').innerText = `+${val} Hours`;
+      document.getElementById('pred-area-val').innerText = `${(14.8 + val * 0.82).toFixed(1)} km² (+${val}h)`;
+      
+      if (val >= 28) {
+        document.getElementById('pred-eta-val').innerText = `SHORELINE INTERCEPTION ACTIVE`;
+        document.getElementById('pred-eta-val').className = "font-mono text-coral-400 font-bold animate-pulse";
+      } else {
+        document.getElementById('pred-eta-val').innerText = `${(31 - val * 0.9).toFixed(0)} Hours (Key Biscayne)`;
+        document.getElementById('pred-eta-val').className = "font-mono text-amber-400 font-semibold";
+      }
+
+      drawSlickPrediction(AppState.forecastHour);
+    }
+
+    function setForecastHour(val) {
+      document.getElementById('slider-forecast').value = val;
+      onForecastSliderChange(val);
+    }
+
+    function recalculateDriftSim() {
+      drawSlickPrediction(AppState.forecastHour);
+      showToast('Hydrodynamic trajectory recalculated with current wind & tide', 'success');
+    }
+
+    /* =========================================================================
+       MODULE 3 & 5: CHARTS (RADAR & LOGISTICS BAR)
+       ========================================================================= */
+    function initCharts() {
+      // 1. Radar Chart (Risk Components)
+      const radarCtx = document.getElementById('riskRadarChart').getContext('2d');
+      AppState.charts.riskRadar = new Chart(radarCtx, {
+        type: 'radar',
+        data: {
+          labels: ['Shoreline Proximity', 'Coral Reef Sensitivity', 'Wildlife Nesting', 'Release Volume', 'Weather Choppiness'],
+          datasets: [{
+            label: 'Incident Vulnerability Index',
+            data: [92, 95, 78, 85, 70],
+            backgroundColor: 'rgba(244, 63, 94, 0.25)',
+            borderColor: '#f43f5e',
+            borderWidth: 2,
+            pointBackgroundColor: '#2dd4bf',
+            pointBorderColor: '#fff',
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false }
+          },
+          scales: {
+            r: {
+              angleLines: { color: '#1a4371' },
+              grid: { color: '#112e4f' },
+              pointLabels: {
+                color: '#94a3b8',
+                font: { size: 9, family: 'Inter' }
+              },
+              ticks: {
+                display: false,
+                backdropColor: 'transparent',
+                stepSize: 20
+              },
+              suggestedMin: 0,
+              suggestedMax: 100
+            }
+          }
+        }
+      });
+
+      // 2. Bar Chart (Resource Inventory vs Required)
+      const barCtx = document.getElementById('resourceBarChart').getContext('2d');
+      AppState.charts.resourceBar = new Chart(barCtx, {
+        type: 'bar',
+        data: {
+          labels: ['Nanocellulose Sorbent (Tons)', 'Containment Booms (km)', 'Weir Skimmers (Units)', 'Response Vessels (Boats)'],
+          datasets: [
+            {
+              label: 'Required Demand',
+              data: [23.6, 4.2, 6, 8],
+              backgroundColor: 'rgba(244, 63, 94, 0.75)',
+              borderRadius: 4
+            },
+            {
+              label: 'Depot Stockpile Available',
+              data: [35.0, 3.5, 8, 9],
+              backgroundColor: 'rgba(45, 212, 191, 0.8)',
+              borderRadius: 4
+            }
+          ]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              labels: {
+                color: '#cbd5e1',
+                font: { size: 10, family: 'Inter' }
+              }
+            }
+          },
+          scales: {
+            x: {
+              grid: { display: false },
+              ticks: { color: '#94a3b8', font: { size: 10 } }
+            },
+            y: {
+              grid: { color: '#112e4f' },
+              ticks: { color: '#94a3b8', font: { size: 10 } }
+            }
+          }
+        }
+      });
+    }
+
+    function selectCleanupMaterial(type) {
+      if (type === 'cellulose') {
+        AppState.incident.primaryTech = "Nanocellulose Bio-Aerogel";
+        showToast('Selected Nanocellulose Bio-Aerogel as Primary Technique', 'success');
+      } else if (type === 'rice_husk') {
+        AppState.incident.primaryTech = "Carbonized Rice Husk & Bagasse";
+        showToast('Selected Rice Husk Biomass as Primary Technique', 'info');
+      } else {
+        AppState.incident.primaryTech = "Mechanical Booms & Weir Skimmers";
+        showToast('Selected Pure Mechanical Containment', 'info');
+      }
+      switchTab('resources');
+    }
+
+    /* =========================================================================
+       MODULE 5 & 6: RESOURCE OPTIMIZER, REPORTING & DB
+       ========================================================================= */
+    function recalculateResources() {
+      const area = AppState.incident.slickAreaKm2;
+      const volumeM3 = area * 80; // Estimated 80m3 per km2 for medium slick
+      
+      // Aerogel absorption ratio ~50:1 => 1 ton absorbs ~50 tons oil (~55 m3)
+      const sorbentTons = (volumeM3 / 50).toFixed(1);
+      const boomMeters = Math.round(Math.sqrt(area) * 1100);
+      const skimmerUnits = Math.max(3, Math.ceil(volumeM3 / 200));
+      const totalCost = Math.round(sorbentTons * 3200 + boomMeters * 18 + skimmerUnits * 4500 * 3);
+
+      document.getElementById('res-sorbent-req').innerText = `${sorbentTons} Tons`;
+      document.getElementById('res-booms-req').innerText = `${boomMeters.toLocaleString()} m`;
+      document.getElementById('res-skimmers-req').innerText = `${skimmerUnits} Units`;
+      document.getElementById('res-total-cost').innerText = `$${totalCost.toLocaleString()}`;
+
+      // Update Chart
+      if (AppState.charts.resourceBar) {
+        AppState.charts.resourceBar.data.datasets[0].data = [
+          parseFloat(sorbentTons),
+          parseFloat((boomMeters / 1000).toFixed(1)),
+          skimmerUnits,
+          Math.ceil(skimmerUnits * 1.3)
+        ];
+        AppState.charts.resourceBar.update();
+      }
+
+      showToast('Optimization solver matched resources with minimal ecological cost', 'success');
+    }
+
+    function requestEmergencySupplies() {
+      showToast('Requisition ticket DISPATCHED to Regional Port Authority Depot', 'warning');
+    }
+
+    function renderIncidentsTable() {
+      const tbody = document.getElementById('incidents-table-body');
+      tbody.innerHTML = '';
+
+      AppState.incidentsDB.forEach((item, index) => {
+        const row = document.createElement('tr');
+        row.className = "hover:bg-ocean-850/60 transition";
+        row.innerHTML = `
+          <td class="py-3 font-mono text-teal-400 font-medium">${item.id}</td>
+          <td class="py-3 text-slate-300">${item.timestamp}</td>
+          <td class="py-3 text-white font-medium">${item.location}</td>
+          <td class="py-3 font-mono text-slate-300">${item.area}</td>
+          <td class="py-3"><span class="px-2 py-0.5 rounded text-[10px] font-mono ${item.risk.includes('Critical') ? 'bg-coral-500/20 text-coral-400 border border-coral-500/30' : 'bg-amber-500/20 text-amber-300 border border-amber-500/30'}">${item.risk}</span></td>
+          <td class="py-3 text-slate-400">${item.tech}</td>
+          <td class="py-3 text-right">
+            <button onclick="loadIncidentToActive('${item.id}')" class="px-2 py-1 bg-ocean-800 hover:bg-ocean-700 text-teal-300 rounded text-xs">Load</button>
+          </td>
+        `;
+        tbody.appendChild(row);
+      });
+
+      document.getElementById('db-record-count').innerText = `Showing ${AppState.incidentsDB.length} logged incidents`;
+    }
+
+    function saveCurrentIncidentToDB() {
+      const newRec = {
+        id: AppState.incident.id,
+        timestamp: new Date().toLocaleString(),
+        location: AppState.incident.location,
+        area: `${AppState.incident.slickAreaKm2.toFixed(1)} km²`,
+        risk: `${AppState.incident.riskLevel.split(' ')[0]} (${AppState.incident.riskIndex})`,
+        tech: AppState.incident.primaryTech
+      };
+
+      // Check if already exists
+      const existingIdx = AppState.incidentsDB.findIndex(i => i.id === newRec.id);
+      if (existingIdx >= 0) {
+        AppState.incidentsDB[existingIdx] = newRec;
+      } else {
+        AppState.incidentsDB.unshift(newRec);
+      }
+
+      renderIncidentsTable();
+      showToast(`Mission ${newRec.id} stored in database ledger`, 'success');
+    }
+
+    function loadIncidentToActive(id) {
+      const match = AppState.incidentsDB.find(i => i.id === id);
+      if (match) {
+        AppState.incident.id = match.id;
+        document.getElementById('current-incident-tag').innerText = `Active: ${match.id}`;
+        showToast(`Loaded Mission ${id} into active command workspace`, 'info');
+        switchTab('dashboard');
+      }
+    }
+
+    function exportIncidentsCSV() {
+      let csvContent = "data:text/csv;charset=utf-8,ID,Timestamp,Location,Area,Risk,RecommendedTechnology\n";
+      AppState.incidentsDB.forEach(row => {
+        csvContent += `"${row.id}","${row.timestamp}","${row.location}","${row.area}","${row.risk}","${row.tech}"\n`;
+      });
+      const encodedUri = encodeURI(csvContent);
+      const link = document.createElement("a");
+      link.setAttribute("href", encodedUri);
+      link.setAttribute("download", `EcoSpill_Incidents_${Date.now()}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast('Exported incidents as CSV file', 'success');
+    }
+
+    function exportReportPDF() {
+      document.getElementById('rep-id').innerText = AppState.incident.id;
+      document.getElementById('rep-time').innerText = new Date().toUTCString();
+      window.print();
+    }
+
+    function triggerQuickWorkflow() {
+      showToast('Initiating Automated Pipeline: Detection &rarr; Drift &rarr; Risk &rarr; Allocation', 'info');
+      switchTab('detection');
+      setTimeout(() => {
+        runAiDetectionPipeline();
+        setTimeout(() => {
+          switchTab('prediction');
+          setTimeout(() => {
+            switchTab('risk');
+            setTimeout(() => {
+              switchTab('cleanup');
+            }, 1200);
+          }, 1200);
+        }, 1500);
+      }, 500);
+    }
+
+    function resetToSampleIncident() {
+      AppState.incident.slickAreaKm2 = 14.8;
+      AppState.incident.confidence = 94.6;
+      AppState.incident.riskIndex = 88;
+      loadSamplePreset('sar');
+      showToast('Reset to Florida Straits baseline spill scenario', 'info');
+    }
+
+    /* =========================================================================
+       FASTAPI ENDPOINT PLAYGROUND & NOTIFICATIONS
+       ========================================================================= */
+    function openApiModal() {
+      document.getElementById('api-modal').classList.remove('hidden');
+      executeApiTest();
+      lucide.createIcons();
+    }
+
+    function closeApiModal() {
+      document.getElementById('api-modal').classList.add('hidden');
+    }
+
+    function executeApiTest() {
+      const endpoint = document.getElementById('api-endpoint-select').value;
+      const respBox = document.getElementById('api-response-display');
+      const payloadBox = document.getElementById('api-payload-display');
+
+      respBox.innerText = "// Sending request to FastAPI backend router...";
+
+      setTimeout(() => {
+        let mockResponse = {};
+        if (endpoint === '/detect') {
+          payloadBox.innerText = JSON.stringify({
+            image_format: "SAR_TIFF_SENTINEL1",
+            latitude: 25.320,
+            longitude: -80.080
+          }, null, 2);
+          mockResponse = {
+            status: "success",
+            prediction: "Oil Spill Detected",
+            confidence_score: 0.9462,
+            slick_area_sq_km: 14.82,
+            oil_film_thickness_mm: 0.08,
+            estimated_volume_m3: 1185.6,
+            algorithm: "ResNet50-FPN-HydrocarbonMask"
+          };
+        } else if (endpoint === '/predict-spread') {
+          payloadBox.innerText = JSON.stringify({
+            origin_coords: [25.320, -80.080],
+            forecast_hours: 24,
+            wind_knots: 16.5,
+            current_ms: 0.75
+          }, null, 2);
+          mockResponse = {
+            trajectory_vector: { speed_knots: 2.14, bearing_deg: 318 },
+            projected_area_km2: 34.6,
+            shoreline_intersection_eta_hours: 31.0,
+            coriolis_deflection_deg: 12.4
+          };
+        } else if (endpoint === '/assess-risk') {
+          mockResponse = {
+            composite_risk_score: 88,
+            risk_classification: "CRITICAL",
+            coral_proximity_km: 4.2,
+            highest_vulnerability_target: "Biscayne Coral Ridge (ESI-10B)"
+          };
+        } else if (endpoint === '/recommend-cleanup') {
+          mockResponse = {
+            primary_recommendation: "Nanocellulose Bio-Aerogel",
+            absorption_ratio: "50:1 g/g",
+            biodegradability_days: 60,
+            chemical_dispersants_allowed: false
+          };
+        } else if (endpoint === '/optimize-resources') {
+          mockResponse = {
+            sorbent_needed_tons: 23.6,
+            booms_needed_meters: 4200,
+            skimmer_units_needed: 6,
+            estimated_cost_usd: 184500
+          };
+        } else {
+          mockResponse = { incidents: AppState.incidentsDB };
+        }
+        respBox.innerText = JSON.stringify(mockResponse, null, 2);
+      }, 400);
+    }
+
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      
+      const colors = {
+        info: 'bg-ocean-850 text-teal-300 border-teal-500/40',
+        success: 'bg-ocean-850 text-emerald-300 border-emerald-500/40',
+        warning: 'bg-ocean-850 text-amber-300 border-amber-500/40',
+        error: 'bg-ocean-850 text-coral-300 border-coral-500/40'
+      };
+
+      toast.className = `pointer-events-auto flex items-center gap-2 px-4 py-2.5 rounded-lg border text-xs shadow-xl backdrop-blur transition transform translate-y-2 opacity-0 duration-300 ${colors[type] || colors.info}`;
+      toast.innerHTML = `<i data-lucide="info" class="w-4 h-4 shrink-0"></i><span>${message}</span>`;
+      
+      container.appendChild(toast);
+      lucide.createIcons();
+
+      setTimeout(() => {
+        toast.classList.remove('translate-y-2', 'opacity-0');
+      }, 20);
+
+      setTimeout(() => {
+        toast.classList.add('opacity-0', 'translate-y-2');
+        setTimeout(() => toast.remove(), 300);
+      }, 4000);
+    }
+  </script>
+</body>
+</html>
